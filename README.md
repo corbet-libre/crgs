@@ -1,0 +1,58 @@
+# crgs
+
+**Community register: pseudonyms, handles, roles and coarse leases.**
+
+Part of `cvld`, the permanent door of the cmtymeet trust stack. Native Rust;
+interfaces may change. See [the implemented contract](docs/CONTRACT.md) for
+boundaries, expiry semantics and caller responsibilities.
+
+## Dependency survey
+
+Surveyed crates.io and GitHub on 2026-09-30 before implementation:
+
+| Candidate | Choice and reason |
+|---|---|
+| [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency: main exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
+| [libsql 0.9.30](https://crates.io/crates/libsql) ([upstream](https://github.com/tursodatabase/libsql), MIT) | Official local/Turso client, used through crlt. No direct driver dependency or temporary migration adapter is needed. |
+| [SQLx](https://github.com/launchbadge/sqlx) (MIT/Apache-2.0) | Maintained SQL toolkit; its SQLite adapter would not supply the required Turso and crlt community boundary. An ORM adds no value for this small schema. |
+| [unicode-security](https://github.com/unicode-rs/unicode-security) (MIT/Apache-2.0) | UTS #39 skeleton candidate for the caller's handle checker. Intentionally not a dependency: the contract requires the caller to supply its validated skeleton. |
+| [chrono](https://github.com/chronotope/chrono) (MIT/Apache-2.0) | UTC calendar conversion from caller-supplied times; clock and timezone discovery features are disabled. |
+
+Tokio supplies in-memory transaction locking; `thiserror` supplies fixed typed
+errors. `tempfile` is test-only. These dependencies are permissively licensed.
+Register-specific lifecycle rules stay here; SQL, transactions, pooling, TLS,
+and Unicode validation remain with their respective established libraries.
+No other cvld crate API is required: the pseudonym is opaque and handle
+validation is the caller's responsibility.
+
+## API
+
+`Register<S>` works with `MemoryStorage` or `LibsqlStorage`. Operations include
+`reserve_handle`, `cancel_reservation`, `admit`, `member`, `by_handle`,
+`is_handle_available`, `role`, `set_role`, `extend_lease`, `change_handle`, and
+`release_expired`. All mutations are atomic. Release policy defaults to 24
+months; leases and block deadlines contain only year and month. Reservation
+expiry is transient and removed when no longer needed.
+
+The service adds `SCHEMA` to its full `crlt` migration history and passes a
+`crlt::Community` to `LibsqlStorage::new`. One database per community is a
+service routing rule; SQL namespace checks provide an additional boundary.
+Never enable dependency SQL/HTTP debug tracing in a deployment.
+
+## Verification
+
+GitHub Actions runs `cargo fmt --check`,
+`cargo clippy --all-targets -- -D warnings`, and `cargo test` on stable Rust.
+Do not run Cargo on the workstation. Tests exercise the same register API
+against real memory transactions and temporary libSQL files, plus persistence,
+concurrency, isolation, query plans and failures.
+
+The optional Turso test returns without connecting unless **both** `TURSO_URL`
+and `TURSO_TOKEN` are nonempty. Supply a disposable test database from a trusted
+test runner: the test applies schema and writes test records. No credentials
+are configured in the repository or GitHub Actions. Never publish this crate
+to a registry.
+
+## License
+
+Copyright 2026 Julian Y. Richard Corbet. Licensed under [LGPL-3.0-only](LICENSES/LGPL-3.0-only.txt) [WITH LGPL-3.0-linking-exception](LICENSES/LGPL-3.0-linking-exception.txt). See [LICENSE.md](LICENSE.md).
