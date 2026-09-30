@@ -20,7 +20,7 @@ fn id(value: u8) -> MemberId {
     MemberId::new(vec![0, 255, value]).unwrap()
 }
 fn handle(value: &str) -> Handle {
-    Handle::new(value, value).unwrap()
+    Handle::from_display(value).unwrap()
 }
 fn reservation(value: u8, name: &str) -> Reservation {
     Reservation {
@@ -80,7 +80,13 @@ async fn lifecycle<S: Storage + Clone>(storage: S) {
             .unwrap(),
         r
     );
-    assert_eq!(register.by_handle("member_one", now()).await.unwrap(), None);
+    assert_eq!(
+        register
+            .by_handle(handle("member_one").skeleton(), now())
+            .await
+            .unwrap(),
+        None
+    );
     let a = Admission {
         id: id(1),
         handle: handle("member_one"),
@@ -90,7 +96,10 @@ async fn lifecycle<S: Storage + Clone>(storage: S) {
     let member = register.admit(a.clone(), now()).await.unwrap();
     assert_eq!(register.admit(a, now()).await.unwrap(), member);
     assert_eq!(
-        register.by_handle("member_one", now()).await.unwrap(),
+        register
+            .by_handle(handle("member_one").skeleton(), now())
+            .await
+            .unwrap(),
         Some(member.clone())
     );
     assert_eq!(register.role(&id(1)).await.unwrap(), Some(Role::Root));
@@ -130,13 +139,13 @@ async fn uniqueness<S: Storage + Clone>(storage: S) {
     let register = Register::new(storage, ReleasePeriod::default());
     let first = Reservation {
         member_id: id(1),
-        handle: Handle::new("paypalname", "paypalname").unwrap(),
+        handle: handle("paypalname"),
         expires_at: now() + Duration::hours(1),
     };
     register.reserve_handle(first.clone(), now()).await.unwrap();
     let mut confusable = first.clone();
     confusable.member_id = id(2);
-    confusable.handle = Handle::new("pаypalname", "paypalname").unwrap(); // Cyrillic a; caller supplied the collision.
+    confusable.handle = handle("pаypalname"); // Cyrillic a; the library derives the collision.
     assert_eq!(
         register.reserve_handle(confusable, now()).await,
         Err(Error::HandleUnavailable)
@@ -164,7 +173,7 @@ async fn uniqueness<S: Storage + Clone>(storage: S) {
         Err(Error::ReservationRequired)
     );
     a.id = id(1);
-    a.handle = Handle::new("Other display", "paypalname").unwrap();
+    a.handle = handle("PAYPALNAME");
     assert_eq!(
         register.admit(a.clone(), now()).await,
         Err(Error::ReservationRequired)
@@ -183,18 +192,26 @@ async fn reservation_expiry<S: Storage + Clone>(storage: S) {
     register.reserve_handle(r.clone(), now()).await.unwrap();
     assert!(
         !register
-            .is_handle_available("expiring_name", expiry - Duration::nanoseconds(1))
+            .is_handle_available(
+                handle("expiring_name").skeleton(),
+                expiry - Duration::nanoseconds(1)
+            )
             .await
             .unwrap()
     );
     assert!(
         register
-            .is_handle_available("expiring_name", expiry)
+            .is_handle_available(handle("expiring_name").skeleton(), expiry)
             .await
             .unwrap()
     );
     let mut tx = storage.begin().await.unwrap();
-    assert!(tx.claim("expiring_name").await.unwrap().is_some()); // Reads do not clean up.
+    assert!(
+        tx.claim(handle("expiring_name").skeleton())
+            .await
+            .unwrap()
+            .is_some()
+    ); // Reads do not clean up.
     tx.commit().await.unwrap();
     assert_eq!(
         register
@@ -218,25 +235,25 @@ async fn reservation_expiry<S: Storage + Clone>(storage: S) {
     register.reserve_handle(replacement, expiry).await.unwrap();
     assert!(
         !register
-            .cancel_reservation(&id(1), "expiring_name")
+            .cancel_reservation(&id(1), handle("expiring_name").skeleton())
             .await
             .unwrap()
     );
     assert!(
         register
-            .cancel_reservation(&id(2), "expiring_name")
+            .cancel_reservation(&id(2), handle("expiring_name").skeleton())
             .await
             .unwrap()
     );
     assert!(
         !register
-            .cancel_reservation(&id(2), "expiring_name")
+            .cancel_reservation(&id(2), handle("expiring_name").skeleton())
             .await
             .unwrap()
     );
     assert!(
         register
-            .is_handle_available("expiring_name", expiry)
+            .is_handle_available(handle("expiring_name").skeleton(), expiry)
             .await
             .unwrap()
     );
@@ -252,7 +269,7 @@ async fn reservation_expiry<S: Storage + Clone>(storage: S) {
     register.reserve_handle(new, expiry).await.unwrap();
     assert!(
         register
-            .is_handle_available("other_pending", expiry)
+            .is_handle_available(handle("other_pending").skeleton(), expiry)
             .await
             .unwrap()
     );
@@ -269,21 +286,21 @@ async fn release_boundaries<S: Storage + Clone>(storage: S) {
     );
     assert!(
         register
-            .by_handle("lease_name", before)
+            .by_handle(handle("lease_name").skeleton(), before)
             .await
             .unwrap()
             .is_some()
     );
     assert!(
         register
-            .by_handle("lease_name", due)
+            .by_handle(handle("lease_name").skeleton(), due)
             .await
             .unwrap()
             .is_none()
     );
     assert!(
         register
-            .is_handle_available("lease_name", due)
+            .is_handle_available(handle("lease_name").skeleton(), due)
             .await
             .unwrap()
     );
@@ -297,29 +314,23 @@ async fn release_boundaries<S: Storage + Clone>(storage: S) {
         register.release_expired(due, 100).await.unwrap(),
         Released::default()
     );
-    register
-        .extend_lease(&id(1), month(2028, 12), due)
-        .await
-        .unwrap();
-    assert!(
-        register
-            .is_handle_available("lease_name", due)
-            .await
-            .unwrap()
+    assert_eq!(
+        register.extend_lease(&id(1), month(2028, 12), due).await,
+        Err(Error::LeaseExpired)
     );
-    register
-        .change_handle(&id(1), handle("new_lease_name"), due)
-        .await
-        .unwrap();
     assert_eq!(
         register
-            .by_handle("new_lease_name", due)
-            .await
-            .unwrap()
-            .unwrap()
-            .id,
-        id(1)
+            .change_handle(&id(1), handle("new_lease_name"), due)
+            .await,
+        Err(Error::LeaseExpired)
     );
+    assert_eq!(register.member(&id(1)).await.unwrap(), Some(member));
+    let claim = Reservation {
+        member_id: id(2),
+        handle: handle("lease_name"),
+        expires_at: due + Duration::hours(1),
+    };
+    register.reserve_handle(claim, due).await.unwrap();
 }
 
 async fn lazy_release_and_renewal<S: Storage + Clone>(storage: S) {
@@ -339,9 +350,24 @@ async fn lazy_release_and_renewal<S: Storage + Clone>(storage: S) {
         .await
         .unwrap();
     assert_eq!(renewed.handle, None);
+    assert_eq!(renewed.lease_end, month(2026, 9));
+    for member in [1, 2] {
+        assert_eq!(
+            register
+                .extend_lease(&id(member), month(2026, 12), due)
+                .await,
+            Err(Error::LeaseExpired)
+        );
+        assert_eq!(
+            register
+                .change_handle(&id(member), handle("revived_name"), due)
+                .await,
+            Err(Error::LeaseExpired)
+        );
+    }
     assert!(
         register
-            .is_handle_available("renewed_member", due)
+            .is_handle_available(handle("renewed_member").skeleton(), due)
             .await
             .unwrap()
     );
@@ -363,7 +389,7 @@ async fn handle_changes<S: Storage + Clone>(storage: S) {
     );
     assert_eq!(
         register
-            .by_handle("first_name", now())
+            .by_handle(handle("first_name").skeleton(), now())
             .await
             .unwrap()
             .unwrap()
@@ -381,11 +407,7 @@ async fn handle_changes<S: Storage + Clone>(storage: S) {
         Err(Error::HandleUnavailable)
     );
     register
-        .change_handle(
-            &id(1),
-            Handle::new("FIRST NAME", "first_name").unwrap(),
-            now(),
-        )
+        .change_handle(&id(1), handle("FIRST_NAME"), now())
         .await
         .unwrap();
     register
@@ -405,20 +427,23 @@ async fn handle_changes<S: Storage + Clone>(storage: S) {
     );
     let mut tx = storage.begin().await.unwrap();
     assert_eq!(
-        tx.claim("first_name").await.unwrap(),
+        tx.claim(handle("first_name").skeleton()).await.unwrap(),
         Some(Claim::Blocked(month(2028, 10)))
     );
     tx.commit().await.unwrap();
     assert!(
         !register
-            .is_handle_available("first_name", time("2028-09-30T23:59:59Z"))
+            .is_handle_available(
+                handle("first_name").skeleton(),
+                time("2028-09-30T23:59:59Z")
+            )
             .await
             .unwrap()
     );
     let due = time("2028-10-01T00:00:00Z");
     assert!(
         register
-            .is_handle_available("first_name", due)
+            .is_handle_available(handle("first_name").skeleton(), due)
             .await
             .unwrap()
     );
@@ -428,7 +453,7 @@ async fn handle_changes<S: Storage + Clone>(storage: S) {
         .unwrap();
     assert_eq!(
         register
-            .by_handle("first_name", due)
+            .by_handle(handle("first_name").skeleton(), due)
             .await
             .unwrap()
             .unwrap()
@@ -455,7 +480,7 @@ async fn policy_deadlines<S: Storage + Clone>(storage: S) {
         Some(month(2029, 10))
     );
     assert_eq!(
-        tx.claim("long_retention").await.unwrap(),
+        tx.claim(handle("long_retention").skeleton()).await.unwrap(),
         Some(Claim::Blocked(month(2029, 10)))
     );
     tx.commit().await.unwrap();
@@ -535,7 +560,9 @@ async fn invalid_operations<S: Storage + Clone>(storage: S) {
     );
     let invalid_now = time("0000-01-01T00:00:00Z");
     assert_eq!(
-        register.is_handle_available("missing", invalid_now).await,
+        register
+            .is_handle_available(handle("missing").skeleton(), invalid_now)
+            .await,
         Err(Error::InvalidInput)
     );
     assert_eq!(
@@ -567,13 +594,13 @@ async fn invalid_operations<S: Storage + Clone>(storage: S) {
     );
     assert!(
         register
-            .is_handle_available("overflow", now())
+            .is_handle_available(handle("overflow").skeleton(), now())
             .await
             .unwrap()
     );
     assert!(
         register
-            .by_handle("lapsed_member", now())
+            .by_handle(handle("lapsed_member").skeleton(), now())
             .await
             .unwrap()
             .is_some()
@@ -599,7 +626,7 @@ async fn invalid_operations<S: Storage + Clone>(storage: S) {
     assert!(register.member(&id(2)).await.unwrap().is_none());
     assert!(
         !register
-            .is_handle_available("late_lease", now())
+            .is_handle_available(handle("late_lease").skeleton(), now())
             .await
             .unwrap()
     );
@@ -612,7 +639,7 @@ async fn rollback<S: Storage + Clone>(storage: S) {
         .unwrap();
     drop(tx);
     let mut tx = storage.begin().await.unwrap();
-    assert_eq!(tx.claim("first").await.unwrap(), None);
+    assert_eq!(tx.claim(handle("first").skeleton()).await.unwrap(), None);
     tx.save_claim("first", &Claim::Reserved(reservation(1, "first")))
         .await
         .unwrap();
@@ -623,8 +650,8 @@ async fn rollback<S: Storage + Clone>(storage: S) {
     );
     assert_eq!(tx.commit().await, Err(Error::Storage));
     let mut tx = storage.begin().await.unwrap();
-    assert_eq!(tx.claim("first").await.unwrap(), None);
-    assert_eq!(tx.claim("second").await.unwrap(), None);
+    assert_eq!(tx.claim(handle("first").skeleton()).await.unwrap(), None);
+    assert_eq!(tx.claim(handle("second").skeleton()).await.unwrap(), None);
     tx.commit().await.unwrap();
 }
 
@@ -727,9 +754,25 @@ fn dates_and_redaction() {
     assert!(Handle::new("display\0", "skeleton").is_err());
     assert!(Handle::new("display", "skeleton\0").is_err());
     let private = MemberId::new(b"private_member_id".to_vec()).unwrap();
-    let name = Handle::new("private_display", "private_skeleton").unwrap();
+    let name = handle("private_display");
     let debug = format!("{private:?} {name:?} {:?}", Error::Storage);
     for secret in ["private_member_id", "private_display", "private_skeleton"] {
         assert!(!debug.contains(secret));
+    }
+}
+
+#[test]
+fn supplied_skeletons_must_match_normalized_displays() {
+    let expected = handle("paypalname");
+    for display in ["PAYPALNAME", "ｐａｙｐａｌｎａｍｅ", "pаypalname"] {
+        assert_eq!(handle(display).skeleton(), expected.skeleton());
+        assert!(Handle::new(display, expected.skeleton()).is_ok());
+        assert_eq!(
+            Handle::new(display, "invented-unique-key"),
+            Err(Error::InvalidInput)
+        );
+    }
+    for input in ["has space", "zero\0byte", "", &"a".repeat(4097)] {
+        assert!(Handle::from_display(input).is_err());
     }
 }

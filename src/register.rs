@@ -160,7 +160,9 @@ impl<S: Storage> Register<S> {
     }
 
     /// Extend monotonically; never resurrect a handle already due for release.
-    /// A shorter or identical lease is a no-op. Current lease renewal is caller-authorized.
+    /// Released members return `LeaseExpired`. A due lazy release returns the
+    /// unchanged lease with no handle. Only unreleased members can renew.
+    /// A shorter or identical live lease is a no-op; renewal is caller-authorized.
     pub async fn extend_lease(
         &self,
         id: &MemberId,
@@ -170,6 +172,14 @@ impl<S: Storage> Register<S> {
         let current = YearMonth::at(now)?;
         let mut tx = self.storage.begin().await?;
         let mut stored = tx.member(id).await?.ok_or(Error::MemberNotFound)?;
+        if stored.member.handle.is_none() {
+            return Err(Error::LeaseExpired);
+        }
+        if stored.release_on.is_some_and(|until| until <= current) {
+            release_member(&mut tx, &mut stored).await?;
+            tx.commit().await?;
+            return Ok(stored.member);
+        }
         if lease_end <= stored.member.lease_end {
             tx.commit().await?;
             return Ok(stored.member);
@@ -178,9 +188,6 @@ impl<S: Storage> Register<S> {
             return Err(Error::LeaseExpired);
         }
         let new_release = self.period.after(lease_end)?;
-        if stored.release_on.is_some_and(|until| until <= current) {
-            release_member(&mut tx, &mut stored).await?;
-        }
         stored.member.lease_end = lease_end;
         if stored.member.handle.is_some() {
             stored.release_on = Some(
@@ -205,7 +212,7 @@ impl<S: Storage> Register<S> {
         let current = YearMonth::at(now)?;
         let mut tx = self.storage.begin().await?;
         let mut stored = tx.member(id).await?.ok_or(Error::MemberNotFound)?;
-        if stored.member.lease_end < current {
+        if stored.member.handle.is_none() || stored.member.lease_end < current {
             return Err(Error::LeaseExpired);
         }
         let previous = stored.member.handle.clone();

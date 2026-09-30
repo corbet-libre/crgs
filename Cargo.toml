@@ -11,6 +11,8 @@ publish = false
 include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
 
 [dependencies]
+precis-profiles = "=0.2.0"
+unicode-security = "=0.1.2"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 crlt = { git = "https://github.com/corbet-foss/crlt", rev = "6b94dacd7fa04aa8847c62c6471a1fc5c0f6c9dc" }
 thiserror = "2"

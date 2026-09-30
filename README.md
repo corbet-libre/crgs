@@ -15,7 +15,7 @@ Surveyed crates.io and GitHub on 2026-09-30 before implementation:
 | [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency, pinned to tested main revision `6b94dac`: main exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
 | [libsql 0.9.30](https://crates.io/crates/libsql) ([upstream](https://github.com/tursodatabase/libsql), MIT) | Official local/Turso client, used through crlt. No direct driver dependency or temporary migration adapter is needed. |
 | [SQLx](https://github.com/launchbadge/sqlx) (MIT/Apache-2.0) | Maintained SQL toolkit; its SQLite adapter would not supply the required Turso and crlt community boundary. An ORM adds no value for this small schema. |
-| [unicode-security](https://github.com/unicode-rs/unicode-security) (MIT/Apache-2.0) | UTS #39 skeleton candidate for the caller's handle checker. Intentionally not a dependency: the contract requires the caller to supply its validated skeleton. |
+| [unicode-security](https://github.com/unicode-rs/unicode-security) (MIT/Apache-2.0) | Selected with precis-profiles to verify skeleton/display binding, using the same pinned versions as cgrd. |
 | [chrono](https://github.com/chronotope/chrono) (MIT/Apache-2.0) | UTC calendar conversion from caller-supplied times; clock and timezone discovery features are disabled. |
 
 Tokio supplies in-memory transaction locking; `thiserror` supplies fixed typed
@@ -45,7 +45,7 @@ use chrono::{DateTime, Duration, Utc};
 let register = Register::new(MemoryStorage::default(), ReleasePeriod::default());
 let now: DateTime<Utc> = "2026-09-30T12:00:00Z".parse().unwrap();
 let id = MemberId::new(vec![0, 255, 42])?;
-let handle = Handle::new("alice_handle", "alice_handle")?;
+let handle = Handle::from_display("alice_handle")?;
 register.reserve_handle(Reservation {
     member_id: id.clone(), handle: handle.clone(),
     expires_at: now + Duration::hours(1),
@@ -57,8 +57,8 @@ register.admit(Admission {
 # }
 ```
 
-The example's skeleton is supplied by the caller; use the same handle checker
-and Unicode version consistently for every writer. Production callers supply
+The skeleton is derived from the normalized display. `Handle::new` also accepts
+a supplied skeleton but verifies it before use. Production callers supply
 the trusted current UTC time; crgs never reads a system clock itself.
 
 The service adds `SCHEMA` to its full `crlt` migration history and passes a

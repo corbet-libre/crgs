@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, Datelike, Utc};
+use precis_profiles::{UsernameCaseMapped, precis_core::profile::PrecisFastInvocation};
 
 use crate::{Error, Result};
 
@@ -30,7 +31,7 @@ impl fmt::Debug for MemberId {
     }
 }
 
-/// A display handle and the exact normalized skeleton supplied by the caller.
+/// A display handle bound to its PRECIS-normalized UTS #39 uniqueness key.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Handle {
     display: String,
@@ -38,17 +39,26 @@ pub struct Handle {
 }
 
 impl Handle {
-    /// Check structural validity only. Unicode and policy validation belong to the caller.
+    /// Verify a supplied skeleton against the display, never trusting a caller's key.
+    /// Reserved-name, length and profanity policy still belongs to cgrd.
     pub fn new(display: impl Into<String>, skeleton: impl Into<String>) -> Result<Self> {
-        let display = display.into();
-        let skeleton = skeleton.into();
-        if display.is_empty()
-            || skeleton.is_empty()
-            || display.contains('\0')
-            || skeleton.contains('\0')
-        {
+        let handle = Self::from_display(display)?;
+        if handle.skeleton != skeleton.into() {
             return Err(Error::InvalidInput);
         }
+        Ok(handle)
+    }
+
+    /// Derive the uniqueness key using the same pinned Unicode profiles as cgrd.
+    /// Preserve the display spelling; reject invalid or oversized PRECIS input.
+    pub fn from_display(display: impl Into<String>) -> Result<Self> {
+        let display = display.into();
+        if display.is_empty() || display.len() > 4096 {
+            return Err(Error::InvalidInput);
+        }
+        let normalized =
+            UsernameCaseMapped::enforce(display.as_str()).map_err(|_| Error::InvalidInput)?;
+        let skeleton = unicode_security::skeleton(&normalized).collect();
         Ok(Self { display, skeleton })
     }
 
@@ -57,7 +67,7 @@ impl Handle {
         &self.display
     }
 
-    /// The caller's normalized UTS #39 skeleton, compared bytewise.
+    /// The verified normalized UTS #39 skeleton, compared bytewise.
     pub fn skeleton(&self) -> &str {
         &self.skeleton
     }

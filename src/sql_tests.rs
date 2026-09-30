@@ -29,7 +29,7 @@ fn sample() -> StoredMember {
     StoredMember {
         member: Member {
             id: MemberId::new(vec![0, 255, 1]).unwrap(),
-            handle: Some(Handle::new("member_name", "member_name").unwrap()),
+            handle: Some(Handle::from_display("member_name").unwrap()),
             role: Role::Member,
             lease_end: YearMonth::new(2026, 9).unwrap(),
         },
@@ -130,7 +130,7 @@ async fn stored_fields_are_coarse_and_blocks_have_no_owner() {
     register
         .change_handle(
             &stored.member.id,
-            Handle::new("new_name", "new_name").unwrap(),
+            Handle::from_display("new_name").unwrap(),
             now,
         )
         .await
@@ -156,13 +156,25 @@ async fn stored_fields_are_coarse_and_blocks_have_no_owner() {
     );
     assert_eq!(members[0].get_str(5).unwrap(), "2026-09");
     assert_eq!(members[0].get_str(6).unwrap(), "2028-10");
-    let claims = scope.query(CLAIM, ["member_name"]).await.unwrap();
+    let claims = scope
+        .query(
+            CLAIM,
+            [Handle::from_display("member_name").unwrap().skeleton()],
+        )
+        .await
+        .unwrap();
     assert_eq!(claims[0].get_str(1).unwrap(), "blocked");
     for column in [2, 3, 4] {
         assert!(matches!(claims[0].get_value(column).unwrap(), Value::Null));
     }
     assert_eq!(claims[0].get_str(5).unwrap(), "2028-10");
-    let active = scope.query(CLAIM, ["new_name"]).await.unwrap();
+    let active = scope
+        .query(
+            CLAIM,
+            [Handle::from_display("new_name").unwrap().skeleton()],
+        )
+        .await
+        .unwrap();
     assert!(matches!(active[0].get_value(4).unwrap(), Value::Null));
 }
 

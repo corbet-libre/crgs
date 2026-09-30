@@ -14,7 +14,7 @@ fn id(value: u8) -> MemberId {
     MemberId::new(vec![0, value, 255]).unwrap()
 }
 fn handle(name: &str) -> Handle {
-    Handle::new(name, name).unwrap()
+    Handle::from_display(name).unwrap()
 }
 fn register(db: &Db, key: &str) -> Register<LibsqlStorage> {
     Register::new(
@@ -89,13 +89,13 @@ async fn reopen_preserves_members_reservations_blocks_and_migration_history() {
     assert_eq!(member.handle.unwrap(), handle("current_handle"));
     assert!(
         !register
-            .is_handle_available("original_handle", now())
+            .is_handle_available(handle("original_handle").skeleton(), now())
             .await
             .unwrap()
     );
     assert!(
         !register
-            .is_handle_available("pending_handle", now())
+            .is_handle_available(handle("pending_handle").skeleton(), now())
             .await
             .unwrap()
     );
@@ -125,7 +125,11 @@ async fn every_operation_is_scoped_even_when_a_database_is_shared() {
     let b = register(&db, "community-b");
     enroll(&a, 1, "shared_name", Role::Root).await;
     assert!(b.member(&id(1)).await.unwrap().is_none());
-    assert!(b.is_handle_available("shared_name", now()).await.unwrap());
+    assert!(
+        b.is_handle_available(handle("shared_name").skeleton(), now())
+            .await
+            .unwrap()
+    );
     enroll(&b, 1, "shared_name", Role::Member).await;
     a.set_role(&id(1), Role::Admin).await.unwrap();
     a.extend_lease(&id(1), YearMonth::new(2030, 1).unwrap(), now())
@@ -135,7 +139,7 @@ async fn every_operation_is_scoped_even_when_a_database_is_shared() {
         .await
         .unwrap();
     assert_eq!(
-        b.by_handle("shared_name", now())
+        b.by_handle(handle("shared_name").skeleton(), now())
             .await
             .unwrap()
             .unwrap()
@@ -153,14 +157,27 @@ async fn every_operation_is_scoped_even_when_a_database_is_shared() {
     };
     a.reserve_handle(pending.clone(), now()).await.unwrap();
     b.reserve_handle(pending, now()).await.unwrap();
-    assert!(a.cancel_reservation(&id(2), "same_pending").await.unwrap());
-    assert!(!b.is_handle_available("same_pending", now()).await.unwrap());
+    assert!(
+        a.cancel_reservation(&id(2), handle("same_pending").skeleton())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !b.is_handle_available(handle("same_pending").skeleton(), now())
+            .await
+            .unwrap()
+    );
     let later = "2028-10-01T00:00:00Z".parse().unwrap();
     let released = b.release_expired(later, 10).await.unwrap();
     assert_eq!(released.handles, 1);
     assert_eq!(released.reservations, 1);
     assert_eq!(released.blocks, 0);
-    assert!(a.by_handle("new_name", later).await.unwrap().is_some());
+    assert!(
+        a.by_handle(handle("new_name").skeleton(), later)
+            .await
+            .unwrap()
+            .is_some()
+    );
     assert_eq!(a.release_expired(later, 10).await.unwrap().blocks, 1);
     assert!(b.member(&id(1)).await.unwrap().unwrap().handle.is_none());
 }
@@ -203,7 +220,9 @@ async fn independent_database_handles_cannot_double_claim() {
         .await
         .unwrap();
     assert_eq!(
-        b.by_handle("racing_handle", now()).await.unwrap(),
+        b.by_handle(handle("racing_handle").skeleton(), now())
+            .await
+            .unwrap(),
         Some(member)
     );
 }
@@ -222,7 +241,7 @@ async fn cancelled_transaction_releases_connection_and_rolls_back() {
     let task = tokio::spawn(async move {
         let mut tx = worker_storage.begin().await.unwrap();
         tx.save_claim(
-            "uncommitted",
+            handle("uncommitted").skeleton(),
             &crgs::storage::Claim::Blocked(YearMonth::new(2028, 10).unwrap()),
         )
         .await
@@ -235,7 +254,10 @@ async fn cancelled_transaction_releases_connection_and_rolls_back() {
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
     let mut tx = storage.begin().await.unwrap();
-    assert_eq!(tx.claim("uncommitted").await.unwrap(), None);
+    assert_eq!(
+        tx.claim(handle("uncommitted").skeleton()).await.unwrap(),
+        None
+    );
     tx.commit().await.unwrap();
 }
 
@@ -276,7 +298,7 @@ async fn optional_turso_round_trip() {
     assert_eq!(released.blocks, 1);
     assert!(
         register
-            .is_handle_available("turso_changed_member", later)
+            .is_handle_available(handle("turso_changed_member").skeleton(), later)
             .await
             .unwrap()
     );
@@ -307,8 +329,17 @@ async fn advisory_reads_do_not_wait_for_an_unrelated_write_transaction() {
     let writer = storage.begin().await.unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
         assert!(r.member(&id(1)).await.unwrap().is_some());
-        assert!(r.by_handle("first", now()).await.unwrap().is_some());
-        assert!(r.is_handle_available("second", now()).await.unwrap());
+        assert!(
+            r.by_handle(handle("first").skeleton(), now())
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            r.is_handle_available(handle("second").skeleton(), now())
+                .await
+                .unwrap()
+        );
         assert!(r.reservation(&id(2)).await.unwrap().is_none());
     })
     .await
@@ -316,5 +347,10 @@ async fn advisory_reads_do_not_wait_for_an_unrelated_write_transaction() {
     drop(writer);
     let mut read = storage.begin_read().await.unwrap();
     assert!(read.remove_claim("first").await.is_err());
-    assert!(r.by_handle("first", now()).await.unwrap().is_some());
+    assert!(
+        r.by_handle(handle("first").skeleton(), now())
+            .await
+            .unwrap()
+            .is_some()
+    );
 }

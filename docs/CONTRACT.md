@@ -1,11 +1,11 @@
 # crgs contract
 
 `crgs` is the community register below `cmbr` in `cvld`. It stores the
-community pseudonym as opaque bytes, a display handle and caller-supplied
+community pseudonym as opaque bytes, a display handle and verified
 UTS #39 skeleton, role (`root`, `admin`, `member`), and a coarse lease end.
 It implements reservation, admission, lookup, role changes, lease extension,
 handle changes and expiry release. It contains no cryptography, login dates,
-request logs, gate data, normalization or authorization engine.
+request logs, gate data or authorization engine.
 
 ## Caller boundary
 
@@ -14,9 +14,9 @@ Every SQL table and unique key includes `community_id`; `crlt` injects the
 scope. A shared-database test verifies defence in depth. Pseudonyms are never
 derived or compared across communities. The caller authenticates the member,
 authorizes roles and changes, validates handles with its handle checker, and
-supplies a trusted UTC clock and policy. A supplied skeleton is treated as an
-exact, case-sensitive string; crgs cannot verify its relationship to a display
-handle. Never expose this storage capability directly to untrusted clients.
+supplies a trusted UTC clock and policy. A supplied skeleton must equal UTS #39 applied to the PRECIS
+UsernameCaseMapped display. `Handle::from_display` derives it directly. Both
+Unicode dependencies match cgrd; input is capped at 4096 bytes before normalization. Never expose this storage capability directly to untrusted clients.
 
 ## Time and retention
 
@@ -62,8 +62,9 @@ Reads do not clean up or record access. Handle lookup and availability apply
 the supplied current time even before maintenance. Writes reclaim an expired
 target claim atomically. `release_expired` processes bounded batches per claim
 kind, and may be repeated until all counts are zero. Release never resurrects
-an old handle: extending a released member only updates its lease; a separate
-handle change can claim a new handle once the lease is current. Reserving a
+a member: released records reject lease extension and handle changes. Extension
+that discovers a due release commits that release and returns the original
+lease with no handle. Renewal is possible only before the release deadline. Reserving a
 handle is for pending enrolment, not existing members.
 
 ## Schema and integration
