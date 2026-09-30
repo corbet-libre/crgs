@@ -12,7 +12,7 @@ Surveyed crates.io and GitHub on 2026-09-30 before implementation:
 
 | Candidate | Choice and reason |
 |---|---|
-| [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency: main exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
+| [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency, pinned to tested main revision `6b94dac`: main exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
 | [libsql 0.9.30](https://crates.io/crates/libsql) ([upstream](https://github.com/tursodatabase/libsql), MIT) | Official local/Turso client, used through crlt. No direct driver dependency or temporary migration adapter is needed. |
 | [SQLx](https://github.com/launchbadge/sqlx) (MIT/Apache-2.0) | Maintained SQL toolkit; its SQLite adapter would not supply the required Turso and crlt community boundary. An ORM adds no value for this small schema. |
 | [unicode-security](https://github.com/unicode-rs/unicode-security) (MIT/Apache-2.0) | UTS #39 skeleton candidate for the caller's handle checker. Intentionally not a dependency: the contract requires the caller to supply its validated skeleton. |
@@ -27,12 +27,39 @@ validation is the caller's responsibility.
 
 ## API
 
-`Register<S>` works with `MemoryStorage` or `LibsqlStorage`. Operations include
+`Register<S>` works with `MemoryStorage` or `LibsqlStorage`. Memory storage is
+intended for tests and copies its small state per transaction; use libSQL for
+persistent deployments. Operations include
 `reserve_handle`, `cancel_reservation`, `admit`, `member`, `by_handle`,
 `is_handle_available`, `role`, `set_role`, `extend_lease`, `change_handle`, and
 `release_expired`. All mutations are atomic. Release policy defaults to 24
 months; leases and block deadlines contain only year and month. Reservation
 expiry is transient and removed when no longer needed.
+
+```rust
+use crgs::{Admission, Handle, MemberId, MemoryStorage, Register,
+    ReleasePeriod, Reservation, Role, YearMonth};
+use chrono::{DateTime, Duration, Utc};
+
+# async fn example() -> crgs::Result<()> {
+let register = Register::new(MemoryStorage::default(), ReleasePeriod::default());
+let now: DateTime<Utc> = "2026-09-30T12:00:00Z".parse().unwrap();
+let id = MemberId::new(vec![0, 255, 42])?;
+let handle = Handle::new("alice_handle", "alice_handle")?;
+register.reserve_handle(Reservation {
+    member_id: id.clone(), handle: handle.clone(),
+    expires_at: now + Duration::hours(1),
+}, now).await?;
+register.admit(Admission {
+    id, handle, role: Role::Member, lease_end: YearMonth::new(2027, 9)?,
+}, now).await?;
+# Ok(())
+# }
+```
+
+The example's skeleton is supplied by the caller; use the same handle checker
+and Unicode version consistently for every writer. Production callers supply
+the trusted current UTC time; crgs never reads a system clock itself.
 
 The service adds `SCHEMA` to its full `crlt` migration history and passes a
 `crlt::Community` to `LibsqlStorage::new`. One database per community is a
@@ -43,6 +70,7 @@ Never enable dependency SQL/HTTP debug tracing in a deployment.
 
 GitHub Actions runs `cargo fmt --check`,
 `cargo clippy --all-targets -- -D warnings`, and `cargo test` on stable Rust.
+The committed `Cargo.lock` and CI artifact retain the tested dependency graph.
 Do not run Cargo on the workstation. Tests exercise the same register API
 against real memory transactions and temporary libSQL files, plus persistence,
 concurrency, isolation, query plans and failures.

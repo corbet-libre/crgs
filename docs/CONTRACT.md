@@ -80,3 +80,14 @@ before retrying. crgs does not automatically retry database failures.
 
 The library is native server code, licensed LGPL-3.0-only WITH
 LGPL-3.0-linking-exception. It is not published to a registry.
+
+## Advisory reads
+
+Member, role, reservation, handle and availability lookups use `begin_read`,
+which does not open an immediate write transaction. Its capability rejects
+writes. SQL reads use scoped indexed queries; in-memory reads copy the current
+state and release its short mutex before returning. These responses are advisory:
+a later mutation rechecks all conditions in its own immediate transaction.
+Concurrent changes may make a multi-query read fail closed; they cannot grant a
+reservation or membership. A test holds an unrelated SQL write transaction while
+all public read operations complete, and verifies a read capability cannot write.
