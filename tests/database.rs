@@ -368,18 +368,30 @@ async fn read_capability_refuses_mutation<S: Storage>(storage: S) {
     };
     let mut writer = storage.begin().await.unwrap();
     writer.save_member(&member).await.unwrap();
-    writer.save_claim("existing", &Claim::Active(id(1))).await.unwrap();
+    writer
+        .save_claim("existing", &Claim::Active(id(1)))
+        .await
+        .unwrap();
     writer.commit().await.unwrap();
     let mut read = storage.begin_read().await.unwrap();
     let mut changed = member.clone();
     changed.member.role = Role::Root;
     assert_eq!(read.save_member(&changed).await, Err(crgs::Error::Storage));
-    assert_eq!(read.save_claim("other", &Claim::Active(id(2))).await, Err(crgs::Error::Storage));
-    assert_eq!(read.remove_claim("existing").await, Err(crgs::Error::Storage));
+    assert_eq!(
+        read.save_claim("other", &Claim::Active(id(2))).await,
+        Err(crgs::Error::Storage)
+    );
+    assert_eq!(
+        read.remove_claim("existing").await,
+        Err(crgs::Error::Storage)
+    );
     drop(read);
     let mut verify = storage.begin_read().await.unwrap();
     assert_eq!(verify.member(&id(1)).await.unwrap(), Some(member));
-    assert_eq!(verify.claim("existing").await.unwrap(), Some(Claim::Active(id(1))));
+    assert_eq!(
+        verify.claim("existing").await.unwrap(),
+        Some(Claim::Active(id(1)))
+    );
     assert_eq!(verify.claim("other").await.unwrap(), None);
     verify.commit().await.unwrap();
 }
@@ -396,7 +408,10 @@ async fn memory_and_sql_read_capabilities_refuse_all_mutations() {
 #[tokio::test]
 async fn malformed_stored_handle_prevents_transaction_commit() {
     let directory = tempfile::tempdir().unwrap();
-    let url = format!("file://{}", directory.path().join("corrupt-handle.db").display());
+    let url = format!(
+        "file://{}",
+        directory.path().join("corrupt-handle.db").display()
+    );
     let db = open(&url).await;
     let register = register(&db, "community");
     enroll(&register, 1, "original", Role::Member).await;
@@ -419,7 +434,10 @@ async fn malformed_stored_handle_prevents_transaction_commit() {
 #[tokio::test]
 async fn expired_admission_and_invalid_lookup_preserve_live_reservation() {
     let directory = tempfile::tempdir().unwrap();
-    let url = format!("file://{}", directory.path().join("expired-admission.db").display());
+    let url = format!(
+        "file://{}",
+        directory.path().join("expired-admission.db").display()
+    );
     let db = open(&url).await;
     let register = register(&db, "community");
     let reservation = Reservation {
@@ -427,7 +445,10 @@ async fn expired_admission_and_invalid_lookup_preserve_live_reservation() {
         handle: handle("pending"),
         expires_at: now() + Duration::hours(1),
     };
-    register.reserve_handle(reservation.clone(), now()).await.unwrap();
+    register
+        .reserve_handle(reservation.clone(), now())
+        .await
+        .unwrap();
     assert_eq!(
         register
             .admit(
@@ -442,7 +463,13 @@ async fn expired_admission_and_invalid_lookup_preserve_live_reservation() {
             .await,
         Err(crgs::Error::LeaseExpired)
     );
-    assert_eq!(register.reservation(&id(1)).await.unwrap(), Some(reservation));
+    assert_eq!(
+        register.reservation(&id(1)).await.unwrap(),
+        Some(reservation)
+    );
     assert_eq!(register.member(&id(1)).await.unwrap(), None);
-    assert_eq!(register.is_handle_available("pending\0", now()).await, Err(crgs::Error::InvalidInput));
+    assert_eq!(
+        register.is_handle_available("pending\0", now()).await,
+        Err(crgs::Error::InvalidInput)
+    );
 }
