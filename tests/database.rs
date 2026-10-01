@@ -473,3 +473,75 @@ async fn expired_admission_and_invalid_lookup_preserve_live_reservation() {
         Err(crgs::Error::InvalidInput)
     );
 }
+
+#[tokio::test]
+async fn imported_unchecked_fields_are_rejected_by_the_real_sql_adapter() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Db::open(Config::new(
+        format!("file://{}", directory.path().join("import.db").display()),
+        "",
+    ))
+    .await
+    .unwrap();
+    let schema = "CREATE TABLE crgs_members (
+        community_id TEXT NOT NULL, member_id BLOB NOT NULL,
+        display_handle TEXT, skeleton TEXT, role TEXT NOT NULL,
+        lease_end TEXT NOT NULL, release_on TEXT,
+        PRIMARY KEY (community_id, member_id)
+    ); CREATE TABLE crgs_claims (
+        community_id TEXT NOT NULL, skeleton TEXT NOT NULL, kind TEXT NOT NULL,
+        owner BLOB, display_handle TEXT, expires_at INTEGER, blocked_until TEXT,
+        PRIMARY KEY (community_id, skeleton)
+    );";
+    db.migrate(&[Migration::new(1, "unchecked import", schema)])
+        .await
+        .unwrap();
+    let scope = db.community("community").unwrap();
+    let register = register(&db, "community");
+    scope.execute("INSERT INTO crgs_members (member_id, display_handle, skeleton, role, lease_end, release_on) VALUES (?1, 'name', ?2, 'member', '2026-09', '2028-10')", crlt::params![id(1).as_bytes().to_vec(), handle("name").skeleton().to_owned()]).await.unwrap();
+    assert_eq!(
+        register.member(&id(1)).await.unwrap().unwrap().handle,
+        Some(handle("name"))
+    );
+    for (sql, value) in [
+        (
+            "UPDATE crgs_members SET display_handle = ?1 WHERE member_id = ?2",
+            crlt::Value::Blob(vec![1]),
+        ),
+        (
+            "UPDATE crgs_members SET release_on = ?1 WHERE member_id = ?2",
+            crlt::Value::Blob(vec![1]),
+        ),
+        (
+            "UPDATE crgs_members SET role = ?1 WHERE member_id = ?2",
+            crlt::Value::Text("operator".into()),
+        ),
+    ] {
+        scope
+            .execute(
+                sql,
+                vec![value, crlt::Value::Blob(id(1).as_bytes().to_vec())],
+            )
+            .await
+            .unwrap();
+        assert_eq!(register.member(&id(1)).await, Err(crgs::Error::Storage));
+        scope.execute("UPDATE crgs_members SET display_handle = 'name', role = 'member', release_on = '2028-10' WHERE member_id = ?1", crlt::params![id(1).as_bytes().to_vec()]).await.unwrap();
+        assert!(register.member(&id(1)).await.unwrap().is_some());
+    }
+    scope.execute("INSERT INTO crgs_claims (skeleton, kind, owner) VALUES ('name', 'active', 'wrong-type')", ()).await.unwrap();
+    assert_eq!(
+        register.is_handle_available("name", now()).await,
+        Err(crgs::Error::Storage)
+    );
+    scope
+        .execute(
+            "UPDATE crgs_claims SET kind = 'unknown' WHERE skeleton = 'name'",
+            (),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        register.is_handle_available("name", now()).await,
+        Err(crgs::Error::Storage)
+    );
+}

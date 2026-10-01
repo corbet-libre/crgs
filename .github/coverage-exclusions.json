@@ -1,0 +1,65 @@
+[
+  {
+    "file": "src/register.rs",
+    "line": 192,
+    "source": "if stored.member.handle.is_some() {",
+    "target": "native",
+    "reason": "The earlier no-handle guard returns; this owned local value cannot lose its handle before this condition.",
+    "evidence": "docs/COVERAGE.md#proposed-invariant-exceptions",
+    "evidence_sources": {
+      "src/register.rs": "f1902aa6cd724c519d1671a6de5b2be780d65891ecbbe8a11f151f7addcdc650"
+    },
+    "branch": {
+      "block": 0,
+      "id": 1
+    }
+  },
+  {
+    "file": "src/register.rs",
+    "line": 198,
+    "source": "}",
+    "target": "native",
+    "reason": "LLVM emits this closing line only for the impossible no-handle arm after the earlier guard.",
+    "evidence": "docs/COVERAGE.md#proposed-invariant-exceptions",
+    "evidence_sources": {
+      "src/register.rs": "f1902aa6cd724c519d1671a6de5b2be780d65891ecbbe8a11f151f7addcdc650"
+    }
+  },
+  {
+    "file": "src/register.rs",
+    "line": 236,
+    "source": "if let Some(old) = previous {",
+    "target": "native",
+    "reason": "The earlier no-handle guard returns; previous clones that unchanged Some value.",
+    "evidence": "docs/COVERAGE.md#proposed-invariant-exceptions",
+    "evidence_sources": {
+      "src/register.rs": "f1902aa6cd724c519d1671a6de5b2be780d65891ecbbe8a11f151f7addcdc650"
+    },
+    "branch": {
+      "block": 0,
+      "id": 1
+    }
+  },
+  {
+    "file": "src/register.rs",
+    "line": 239,
+    "source": "}",
+    "target": "native",
+    "reason": "LLVM emits this closing line only for the impossible None arm of the guarded local clone.",
+    "evidence": "docs/COVERAGE.md#proposed-invariant-exceptions",
+    "evidence_sources": {
+      "src/register.rs": "f1902aa6cd724c519d1671a6de5b2be780d65891ecbbe8a11f151f7addcdc650"
+    }
+  },
+  {
+    "file": "src/sql.rs",
+    "line": 119,
+    "source": "_ => Err(Error::Storage),",
+    "target": "native",
+    "reason": "The fixed RESERVATION statement selects only kind = 'reserved'; successful decoding can only construct Reserved.",
+    "evidence": "docs/COVERAGE.md#proposed-invariant-exceptions",
+    "evidence_sources": {
+      "src/sql.rs": "51b52f84aceb36cc122fa5a6ad27d7d4687b887c8808dbba0343bd13b21d14ae"
+    }
+  }
+]

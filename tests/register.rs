@@ -67,6 +67,52 @@ async fn sql() -> (Option<tempfile::TempDir>, LibsqlStorage) {
     )
 }
 
+async fn inconsistent_claims_refuse_release_and_lookup<S: Storage + Clone>(storage: S) {
+    let register = Register::new(storage.clone(), ReleasePeriod::default());
+    enroll(&register, 1, "first", month(2026, 9)).await;
+    enroll(&register, 2, "second", month(2026, 9)).await;
+    let mut tx = storage.begin().await.unwrap();
+    tx.remove_claim(handle("second").skeleton()).await.unwrap();
+    tx.save_claim(handle("first").skeleton(), &Claim::Active(id(2)))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let future = time("2029-01-01T00:00:00Z");
+    assert_eq!(
+        register
+            .is_handle_available(handle("first").skeleton(), now())
+            .await,
+        Err(Error::Storage)
+    );
+    assert_eq!(
+        register.release_expired(future, 10).await,
+        Err(Error::Storage)
+    );
+    assert_eq!(
+        register.member(&id(1)).await.unwrap().unwrap().handle,
+        Some(handle("first"))
+    );
+    let mut tx = storage.begin().await.unwrap();
+    tx.remove_claim(handle("first").skeleton()).await.unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        register.extend_lease(&id(1), month(2029, 12), future).await,
+        Err(Error::Storage)
+    );
+}
+
+#[tokio::test]
+async fn inconsistent_memory_claims_fail_closed() {
+    let (_, storage) = memory().await;
+    inconsistent_claims_refuse_release_and_lookup(storage).await;
+}
+
+#[tokio::test]
+async fn inconsistent_sql_claims_fail_closed() {
+    let (_directory, storage) = sql().await;
+    inconsistent_claims_refuse_release_and_lookup(storage).await;
+}
+
 async fn lifecycle<S: Storage + Clone>(storage: S) {
     let register = Register::new(storage, ReleasePeriod::default());
     assert_eq!(register.member(&id(1)).await.unwrap(), None);
