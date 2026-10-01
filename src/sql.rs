@@ -298,5 +298,5 @@ fn decode_claim(row: &Row) -> Result<Claim> {
 }
 
 #[cfg(test)]
-#[path = "sql_tests.rs"]
+#[path = "tests/sql.rs"]
 mod tests;

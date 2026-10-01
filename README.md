@@ -12,7 +12,7 @@ Surveyed crates.io and GitHub on 2026-09-30 before implementation:
 
 | Candidate | Choice and reason |
 |---|---|
-| [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency, pinned to tested main revision `6b94dac`: main exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
+| [crlt](https://github.com/corbet-foss/crlt) (LGPL-3.0-only WITH linking exception) | Selected git dependency following main with a locked revision: it exposes scoped transactions, migrations and query-plan enforcement. The service supplies a fixed community capability. |
 | [libsql 0.9.30](https://crates.io/crates/libsql) ([upstream](https://github.com/tursodatabase/libsql), MIT) | Official local/Turso client, used through crlt. No direct driver dependency or temporary migration adapter is needed. |
 | [SQLx](https://github.com/launchbadge/sqlx) (MIT/Apache-2.0) | Maintained SQL toolkit; its SQLite adapter would not supply the required Turso and crlt community boundary. An ORM adds no value for this small schema. |
 | [unicode-security](https://github.com/unicode-rs/unicode-security) (MIT/Apache-2.0) | Selected with precis-profiles to verify skeleton/display binding, using the same pinned versions as cgrd. |

@@ -354,3 +354,95 @@ async fn advisory_reads_do_not_wait_for_an_unrelated_write_transaction() {
             .is_some()
     );
 }
+
+async fn read_capability_refuses_mutation<S: Storage>(storage: S) {
+    use crgs::storage::{Claim, StoredMember};
+    let member = StoredMember {
+        member: crgs::Member {
+            id: id(1),
+            handle: Some(handle("existing")),
+            role: Role::Member,
+            lease_end: YearMonth::new(2026, 9).unwrap(),
+        },
+        release_on: Some(YearMonth::new(2028, 10).unwrap()),
+    };
+    let mut writer = storage.begin().await.unwrap();
+    writer.save_member(&member).await.unwrap();
+    writer.save_claim("existing", &Claim::Active(id(1))).await.unwrap();
+    writer.commit().await.unwrap();
+    let mut read = storage.begin_read().await.unwrap();
+    let mut changed = member.clone();
+    changed.member.role = Role::Root;
+    assert_eq!(read.save_member(&changed).await, Err(crgs::Error::Storage));
+    assert_eq!(read.save_claim("other", &Claim::Active(id(2))).await, Err(crgs::Error::Storage));
+    assert_eq!(read.remove_claim("existing").await, Err(crgs::Error::Storage));
+    drop(read);
+    let mut verify = storage.begin_read().await.unwrap();
+    assert_eq!(verify.member(&id(1)).await.unwrap(), Some(member));
+    assert_eq!(verify.claim("existing").await.unwrap(), Some(Claim::Active(id(1))));
+    assert_eq!(verify.claim("other").await.unwrap(), None);
+    verify.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn memory_and_sql_read_capabilities_refuse_all_mutations() {
+    read_capability_refuses_mutation(crgs::MemoryStorage::default()).await;
+    let directory = tempfile::tempdir().unwrap();
+    let url = format!("file://{}", directory.path().join("read-only.db").display());
+    let db = open(&url).await;
+    read_capability_refuses_mutation(LibsqlStorage::new(db.community("community").unwrap())).await;
+}
+
+#[tokio::test]
+async fn malformed_stored_handle_prevents_transaction_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = format!("file://{}", directory.path().join("corrupt-handle.db").display());
+    let db = open(&url).await;
+    let register = register(&db, "community");
+    enroll(&register, 1, "original", Role::Member).await;
+    let scope = db.community("community").unwrap();
+    // Simulate a damaged import without bypassing the real SQL constraints.
+    scope
+        .execute(
+            "UPDATE crgs_members SET skeleton = ?1 WHERE member_id = ?2",
+            crlt::params!["different", id(1).as_bytes().to_vec()],
+        )
+        .await
+        .unwrap();
+    let storage = LibsqlStorage::new(scope);
+    let mut tx = storage.begin().await.unwrap();
+    assert_eq!(tx.member(&id(1)).await, Err(crgs::Error::Storage));
+    assert_eq!(tx.commit().await, Err(crgs::Error::Storage));
+    assert_eq!(register.member(&id(1)).await, Err(crgs::Error::Storage));
+}
+
+#[tokio::test]
+async fn expired_admission_and_invalid_lookup_preserve_live_reservation() {
+    let directory = tempfile::tempdir().unwrap();
+    let url = format!("file://{}", directory.path().join("expired-admission.db").display());
+    let db = open(&url).await;
+    let register = register(&db, "community");
+    let reservation = Reservation {
+        member_id: id(1),
+        handle: handle("pending"),
+        expires_at: now() + Duration::hours(1),
+    };
+    register.reserve_handle(reservation.clone(), now()).await.unwrap();
+    assert_eq!(
+        register
+            .admit(
+                Admission {
+                    id: id(1),
+                    handle: handle("pending"),
+                    role: Role::Member,
+                    lease_end: YearMonth::new(2026, 8).unwrap(),
+                },
+                now(),
+            )
+            .await,
+        Err(crgs::Error::LeaseExpired)
+    );
+    assert_eq!(register.reservation(&id(1)).await.unwrap(), Some(reservation));
+    assert_eq!(register.member(&id(1)).await.unwrap(), None);
+    assert_eq!(register.is_handle_available("pending\0", now()).await, Err(crgs::Error::InvalidInput));
+}
