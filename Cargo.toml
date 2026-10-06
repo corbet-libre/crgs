@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Register: member ID, handle, role and coarse lease per community"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
-repository = "https://github.com/corbet-foss/crgs"
+repository = "https://git.corbet.ch/corbet-foss/crgs.git"
 readme = "README.md"
 publish = false
 include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
@@ -14,7 +14,7 @@ include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.m
 precis-profiles = "=0.2.0"
 unicode-security = "=0.1.2"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
-crlt = { git = "https://github.com/corbet-foss/crlt", branch = "main" }
+crlt = { git = "https://git.corbet.ch/corbet-foss/crlt.git", branch = "v01" }
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
 
