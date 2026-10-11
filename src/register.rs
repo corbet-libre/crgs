@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 
 mod admission;
 mod first;
+mod renewal;
 mod role;
+use renewal::stage_renewal;
 pub use role::RoleCommitGuard;
 
 use crate::{
@@ -145,36 +147,11 @@ impl<S: Storage> Register<S> {
         lease_end: YearMonth,
         now: DateTime<Utc>,
     ) -> Result<Member> {
-        let current = YearMonth::at(now)?;
+        YearMonth::at(now)?;
         let mut tx = self.storage.begin().await?;
-        let mut stored = tx.member(id).await?.ok_or(Error::MemberNotFound)?;
-        if stored.member.handle.is_none() {
-            return Err(Error::LeaseExpired);
-        }
-        if stored.release_on.is_some_and(|until| until <= current) {
-            release_member(&mut tx, &mut stored).await?;
-            tx.commit().await?;
-            return Ok(stored.member);
-        }
-        if lease_end <= stored.member.lease_end {
-            tx.commit().await?;
-            return Ok(stored.member);
-        }
-        if lease_end < current {
-            return Err(Error::LeaseExpired);
-        }
-        let new_release = self.period.after(lease_end)?;
-        stored.member.lease_end = lease_end;
-        if stored.member.handle.is_some() {
-            stored.release_on = Some(
-                stored
-                    .release_on
-                    .map_or(new_release, |old| old.max(new_release)),
-            );
-        }
-        tx.save_member(&stored).await?;
+        let member = stage_renewal(&mut tx, self.period, id, lease_end, now).await?;
         tx.commit().await?;
-        Ok(stored.member)
+        Ok(member)
     }
 
     /// Claim a new handle and block the former skeleton atomically.
