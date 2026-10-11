@@ -8,7 +8,7 @@ pub mod storage;
 mod types;
 
 pub use memory::MemoryStorage;
-pub use register::Register;
+pub use register::{Register, RoleCommitGuard};
 pub use sql::{LibsqlStorage, SCHEMA};
 pub use storage::{Storage, Transaction};
 pub use types::{

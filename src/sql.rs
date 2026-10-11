@@ -33,6 +33,16 @@ impl LibsqlStorage {
     pub fn new(community: crlt::Community) -> Self {
         Self { community }
     }
+
+    pub(crate) fn owned_transaction(&self, tx: crlt::Transaction) -> Result<LibsqlTransaction> {
+        if !tx.belongs_to(&self.community) {
+            return Err(Error::Storage);
+        }
+        Ok(LibsqlTransaction {
+            inner: Connection::Write(tx),
+            failed: false,
+        })
+    }
 }
 
 /// Immediate SQL transaction. crlt discards uncommitted or failed connections.
@@ -85,6 +95,16 @@ impl Connection {
 }
 
 impl LibsqlTransaction {
+    pub(crate) fn into_owned_transaction(self) -> Result<crlt::Transaction> {
+        if self.failed {
+            return Err(Error::Storage);
+        }
+        match self.inner {
+            Connection::Write(tx) => Ok(tx),
+            Connection::Read(_) => Err(Error::Storage),
+        }
+    }
+
     fn checked<T>(&mut self, result: Result<T>) -> Result<T> {
         if result.is_err() {
             self.failed = true;

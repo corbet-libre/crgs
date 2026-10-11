@@ -1,5 +1,9 @@
 use chrono::{DateTime, Utc};
 
+mod admission;
+mod role;
+pub use role::RoleCommitGuard;
+
 use crate::{
     Admission, Error, Handle, Member, MemberId, ReleasePeriod, Released, Reservation, Result, Role,
     Storage, Transaction, YearMonth,
@@ -67,38 +71,9 @@ impl<S: Storage> Register<S> {
 
     /// Admit an exact live reservation, or return an identical prior admission.
     pub async fn admit(&self, admission: Admission, now: DateTime<Utc>) -> Result<Member> {
-        let current = YearMonth::at(now)?;
+        YearMonth::at(now)?;
         let mut tx = self.storage.begin().await?;
-        let member = Member {
-            id: admission.id,
-            handle: Some(admission.handle),
-            role: admission.role,
-            lease_end: admission.lease_end,
-        };
-        if let Some(existing) = tx.member(&member.id).await? {
-            if existing.member != member {
-                return Err(Error::MemberExists);
-            }
-            tx.commit().await?;
-            return Ok(existing.member);
-        }
-        if member.lease_end < current {
-            return Err(Error::LeaseExpired);
-        }
-        let release_on = self.period.after(member.lease_end)?;
-        let handle = member.handle.as_ref().ok_or(Error::InvalidInput)?;
-        match tx.claim(handle.skeleton()).await? {
-            Some(Claim::Reserved(r))
-                if r.member_id == member.id && r.handle == *handle && r.expires_at > now => {}
-            _ => return Err(Error::ReservationRequired),
-        }
-        tx.save_member(&StoredMember {
-            member: member.clone(),
-            release_on: Some(release_on),
-        })
-        .await?;
-        tx.save_claim(handle.skeleton(), &Claim::Active(member.id.clone()))
-            .await?;
+        let member = stage_admission(&mut tx, self.period, admission, now).await?;
         tx.commit().await?;
         Ok(member)
     }
@@ -319,4 +294,44 @@ async fn live_claim(
     } else {
         Ok(claim)
     }
+}
+
+/// Shared original admission lifecycle; the caller retains commit ownership.
+async fn stage_admission(
+    tx: &mut impl Transaction,
+    period: ReleasePeriod,
+    admission: Admission,
+    now: DateTime<Utc>,
+) -> Result<Member> {
+    let current = YearMonth::at(now)?;
+    let member = Member {
+        id: admission.id,
+        handle: Some(admission.handle),
+        role: admission.role,
+        lease_end: admission.lease_end,
+    };
+    if let Some(existing) = tx.member(&member.id).await? {
+        if existing.member != member {
+            return Err(Error::MemberExists);
+        }
+        return Ok(existing.member);
+    }
+    if member.lease_end < current {
+        return Err(Error::LeaseExpired);
+    }
+    let release_on = period.after(member.lease_end)?;
+    let handle = member.handle.as_ref().ok_or(Error::InvalidInput)?;
+    match tx.claim(handle.skeleton()).await? {
+        Some(Claim::Reserved(r))
+            if r.member_id == member.id && r.handle == *handle && r.expires_at > now => {}
+        _ => return Err(Error::ReservationRequired),
+    }
+    tx.save_member(&StoredMember {
+        member: member.clone(),
+        release_on: Some(release_on),
+    })
+    .await?;
+    tx.save_claim(handle.skeleton(), &Claim::Active(member.id.clone()))
+        .await?;
+    Ok(member)
 }
