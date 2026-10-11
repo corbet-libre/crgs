@@ -5,8 +5,8 @@ set -euo pipefail
 : "${CI_COMMIT_SHA:?Missing verified source revision}"
 : "${CI_REPOSITORY_URL:?Missing canonical repository identity}"
 : "${CHECKS:?Missing declared check selection}"
-if [ "$CHECKS" != "verify,advisories" ]; then
-  echo "CHECKS must be exactly 'verify,advisories', got: $CHECKS" >&2
+if [ "$CHECKS" != "verify,advisories" ] && [ "$CHECKS" != "resolve-dependencies" ]; then
+  echo "CHECKS must be verify,advisories or resolve-dependencies, got: $CHECKS" >&2
   exit 2
 fi
 cache_root=${CI_CACHE_ROOT:-${CARGO_HOME:-}}
@@ -54,6 +54,8 @@ cargo_bin=$("$CARGO_HOME/bin/rustup" which --toolchain stable cargo)
 test -x "$cargo_bin"
 export PATH="$(dirname "$cargo_bin"):$PATH"
 export CCID_SOURCE_REVISION="$CI_COMMIT_SHA"
+export ARTIFACT_ROOT="${ARTIFACT_ROOT:-$state/release-artifacts}"
+mkdir -p "$ARTIFACT_ROOT"
 "$CCID_BIN" render --repo "$PWD" --check
 proto --version
 moon --version
@@ -64,6 +66,9 @@ git --version
 cargo-deny --version
 rustup run nightly rustc -vV
 rustup run nightly cargo llvm-cov --version
+if [ "$CHECKS" = "resolve-dependencies" ]; then
+  exec "$CCID_BIN" check --repo "$PWD" --check "$CHECKS"
+fi
 # libsql-ffi runs bindgen at build time; execute BOTH checks inside the pinned
 # shell (NAR-pinned revision in check-shell.nix).
 # Re-prepend the verified ccid directory inside the shell so `ccid` on PATH stays exact.
