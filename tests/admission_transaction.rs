@@ -17,9 +17,10 @@ fn admission(value: u8) -> Admission {
     }
 }
 async fn open(path: &std::path::Path) -> crlt::Db {
-    let db = crlt::Db::open(crlt::Config::new(format!("file://{}", path.display()), ""))
-        .await
-        .unwrap();
+    // A second connection serves the read that must not see the open writer.
+    let mut config = crlt::Config::new(format!("file://{}", path.display()), "");
+    config.max_connections = 2;
+    let db = crlt::Db::open(config).await.unwrap();
     db.migrate(&[crlt::Migration::new(1, "crgs", SCHEMA)])
         .await
         .unwrap();

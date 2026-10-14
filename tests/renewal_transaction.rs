@@ -13,12 +13,13 @@ fn month(year: u16, value: u8) -> YearMonth {
 }
 async fn fixture() -> (tempfile::TempDir, crlt::Db, Register<LibsqlStorage>, Member) {
     let directory = tempfile::tempdir().unwrap();
-    let db = crlt::Db::open(crlt::Config::new(
+    // A second connection serves the read that must not see the open writer.
+    let mut config = crlt::Config::new(
         format!("file://{}", directory.path().join("renew.db").display()),
         "",
-    ))
-    .await
-    .unwrap();
+    );
+    config.max_connections = 2;
+    let db = crlt::Db::open(config).await.unwrap();
     db.migrate(&[crlt::Migration::new(1, "crgs", SCHEMA)])
         .await
         .unwrap();
