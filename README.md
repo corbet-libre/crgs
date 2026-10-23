@@ -71,7 +71,7 @@ Never enable dependency SQL/HTTP debug tracing in a deployment.
 GitHub Actions runs `cargo fmt --check`,
 `cargo clippy --all-targets -- -D warnings`, and `cargo test` on stable Rust.
 The committed `Cargo.lock` and CI artifact retain the tested dependency graph.
-Do not run Cargo on the workstation. Tests exercise the same register API
+Tests exercise the same register API
 against real memory transactions and temporary libSQL files, plus persistence,
 concurrency, isolation, query plans and failures.
 
