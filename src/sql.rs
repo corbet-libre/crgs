@@ -39,7 +39,7 @@ impl LibsqlStorage {
             return Err(Error::Storage);
         }
         Ok(LibsqlTransaction {
-            inner: Connection::Write(tx),
+            inner: Connection::Write(Box::new(tx)),
             failed: false,
         })
     }
@@ -63,14 +63,16 @@ impl Storage for LibsqlStorage {
 
     async fn begin(&self) -> Result<Self::Transaction> {
         Ok(LibsqlTransaction {
-            inner: Connection::Write(self.community.tx().await?),
+            inner: Connection::Write(Box::new(self.community.tx().await?)),
             failed: false,
         })
     }
 }
 
 enum Connection {
-    Write(crlt::Transaction),
+    // Boxed: crlt's transaction capability is several times the read variant and
+    // clippy::large_enum_variant is denied in CI (`-D warnings`).
+    Write(Box<crlt::Transaction>),
     Read(crlt::Community),
 }
 impl Connection {
@@ -100,7 +102,7 @@ impl LibsqlTransaction {
             return Err(Error::Storage);
         }
         match self.inner {
-            Connection::Write(tx) => Ok(tx),
+            Connection::Write(tx) => Ok(*tx),
             Connection::Read(_) => Err(Error::Storage),
         }
     }

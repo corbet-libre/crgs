@@ -11,7 +11,7 @@ fn now() -> DateTime<Utc> {
 fn admission(value: u8) -> Admission {
     Admission {
         id: MemberId::new(vec![value]).unwrap(),
-        handle: Handle::from_display(&format!("member_{value}")).unwrap(),
+        handle: Handle::from_display(format!("member_{value}")).unwrap(),
         role: Role::Root,
         lease_end: YearMonth::new(2026, 12).unwrap(),
     }
