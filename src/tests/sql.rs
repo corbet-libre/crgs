@@ -206,6 +206,45 @@ async fn schema_rejects_invalid_roles_months_and_claim_shapes() {
 }
 
 #[tokio::test]
+async fn a_failed_decode_refuses_to_yield_an_owned_writer() {
+    let (_directory, db) = database().await;
+    let scope = db.community("failed_writer").unwrap();
+    let stored = sample();
+    let storage = LibsqlStorage::new(scope.clone());
+    let mut tx = storage.begin().await.unwrap();
+    tx.save_member(&stored).await.unwrap();
+    tx.commit().await.unwrap();
+    // A damaged import: the stored skeleton no longer matches its display name.
+    scope
+        .execute(
+            "UPDATE crgs_members SET skeleton = ?1 WHERE member_id = ?2",
+            params!["different", stored.member.id.as_bytes().to_vec()],
+        )
+        .await
+        .unwrap();
+    let mut tx = storage.begin().await.unwrap();
+    assert_eq!(tx.member(&stored.member.id).await, Err(Error::Storage));
+    // Fail closed: a writer that already saw a decode failure is never usable.
+    assert_eq!(
+        tx.into_owned_transaction().err(),
+        Some(Error::Storage),
+        "a failed wrapper must not become an owned writer"
+    );
+}
+
+#[tokio::test]
+async fn an_advisory_read_cannot_become_an_owned_write_transaction() {
+    let (_directory, db) = database().await;
+    let storage = LibsqlStorage::new(db.community("reads").unwrap());
+    let tx = storage.begin_read().await.unwrap();
+    assert_eq!(
+        tx.into_owned_transaction().err(),
+        Some(Error::Storage),
+        "an advisory read capability must never be converted into a writer"
+    );
+}
+
+#[tokio::test]
 async fn missing_schema_is_a_redacted_storage_failure() {
     let directory = tempfile::tempdir().unwrap();
     let db = Db::open(Config::new(

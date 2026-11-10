@@ -119,6 +119,27 @@ async fn postacknowledgment_refusal_keeps_actual_role_and_reports_storage_uncert
     assert_eq!(register.member(&expected.id).await.unwrap(), Some(expected));
 }
 
+#[tokio::test]
+async fn acknowledged_role_change_commits_the_new_role_after_both_releases() {
+    let (_directory, register, before) = fixture().await;
+    let mut cut = Cut {
+        before: before.clone(),
+        refuse_check: false,
+        refuse_release: 0,
+        releases: 0,
+    };
+    let changed = register
+        .set_role_checked(&before.id, Role::Admin, &mut cut)
+        .await
+        .unwrap();
+    assert_eq!(cut.releases, 2);
+    assert_eq!(changed.role, Role::Admin);
+    assert_eq!(changed.id, before.id);
+    assert_eq!(changed.handle, before.handle);
+    assert_eq!(changed.lease_end, before.lease_end);
+    assert_eq!(register.member(&before.id).await.unwrap(), Some(changed));
+}
+
 struct Suspended {
     entered: Option<tokio::sync::oneshot::Sender<()>>,
 }
