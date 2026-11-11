@@ -63,7 +63,7 @@ class ResolutionTests(unittest.TestCase):
         for selection in ["verify,advisories", "resolve-dependencies", "verify", "advisories",
                           "resolve-dependencies,verify", "resolve-dependencies ", "other"]:
             env = {**os.environ, "CCID_BIN": "/not-invoked/ccid", "CI_COMMIT_SHA": "a" * 40,
-                   "CI_REPOSITORY_URL": "https://git.corbet.ch/corbet-foss/crgs",
+                   "CI_REPOSITORY_URL": "https://git.corbet.ch/corbet-libre/crgs",
                    "CHECKS": selection, "CI_CACHE_ROOT": "deliberately-relative"}
             result = subprocess.run(["bash", str(runner)], env=env, text=True,
                                     capture_output=True, timeout=10)
