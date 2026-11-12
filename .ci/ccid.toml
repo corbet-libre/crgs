@@ -23,7 +23,7 @@ render_schema = 2
 
 [jobs.verify]
 scheduler = "forgejo"
-runs_on = "heavy"
+runs_on = "linux"
 events = ["push", "manual"]
 checks = ["verify", "advisories"]
 workflow = "ci"
@@ -32,7 +32,7 @@ command = ["bash", ".ci/run-cached.sh"]
 
 [jobs.verify-pr]
 scheduler = "forgejo"
-runs_on = "light"
+runs_on = "linux"
 events = ["pull_request"]
 checks = ["verify", "advisories"]
 workflow = "pr"
@@ -40,7 +40,7 @@ command = ["bash", ".ci/run-cached.sh"]
 
 [jobs.resolve-dependencies]
 scheduler = "forgejo"
-runs_on = "heavy"
+runs_on = "linux"
 events = ["manual"]
 checks = ["resolve-dependencies"]
 workflow = "resolve"
