@@ -3,7 +3,15 @@ project = "crgs"
 
 [checks.verify]
 kind = "commands"
-commands = [["bash", ".ci/verify.sh"]]
+fleet = true
+commands = [
+  ["ccid", "first-party"],
+  ["bash", "-c", "cargo metadata --locked --format-version 1 > /dev/null"],
+  ["cargo", "fmt", "--all", "--check"],
+  ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+  ["cargo", "test", "--locked"],
+  ["ccid", "coverage", "run"],
+]
 cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["python3", "--version"], ["git", "--version"], ["rustup", "run", "nightly", "rustc", "-vV"], ["rustup", "run", "nightly", "cargo", "llvm-cov", "--version"], ["clang", "--version"], ["pkg-config", "--version"]]
 cache_env = ["LIBCLANG_PATH", "PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH"]
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt"]
@@ -47,3 +55,79 @@ workflow = "resolve"
 command = ["bash", ".ci/run-cached.sh"]
 
 [check_shell]
+
+[coverage]
+
+[[coverage.exclusions]]
+file = "src/register.rs"
+line = 190
+source = "if let Some(old) = previous {"
+reason = "change_handle returns at 169-171 when the stored handle is absent; previous clones exactly that guard-passed handle and nothing writes the owned clone, so the None arm cannot run."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.branch]
+block = 0
+id = 1
+
+[coverage.exclusions.evidence_sources]
+"src/register.rs" = "aa86e5530d68c5e37205287f2d34f111aa608531877c43b3393687f97044af09"
+
+[[coverage.exclusions]]
+file = "src/register.rs"
+line = 193
+source = "}"
+reason = "LLVM emits this closing line only for the impossible None arm of the guarded local clone at 190."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.evidence_sources]
+"src/register.rs" = "aa86e5530d68c5e37205287f2d34f111aa608531877c43b3393687f97044af09"
+
+[[coverage.exclusions]]
+file = "src/register/renewal.rs"
+line = 46
+source = "if stored.member.handle.is_some() {"
+reason = "stage_renewal returns at 31-33 for a member without a handle and the owned StoredMember has no shared interior, so this condition cannot be false here."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.branch]
+block = 0
+id = 1
+
+[coverage.exclusions.evidence_sources]
+"src/register/renewal.rs" = "4c8be4bea6c4f2ae10a63fecb6b633a8316ef95b39894f069140143d2f663437"
+
+[[coverage.exclusions]]
+file = "src/register/renewal.rs"
+line = 52
+source = "}"
+reason = "LLVM emits this closing line only for the impossible handle-absent arm of the guarded condition at 46."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.evidence_sources]
+"src/register/renewal.rs" = "4c8be4bea6c4f2ae10a63fecb6b633a8316ef95b39894f069140143d2f663437"
+
+[[coverage.exclusions]]
+file = "src/register/first.rs"
+line = 17
+source = ".into_owned_transaction()?;"
+reason = "The only region LLVM records on this line is the error edge of into_owned_transaction: it fails for a writer that already recorded a decode failure or for a read capability, and owned_transaction just built a fresh write wrapper. Both guards are asserted in sql::tests::a_failed_decode_refuses_to_yield_an_owned_writer and sql::tests::an_advisory_read_cannot_become_an_owned_write_transaction."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.evidence_sources]
+"src/register/first.rs" = "8c4249c1ecdcb197c0854d7939764d1b7a8b0f3cdd3335459a6f4bde224490a0"
+
+[[coverage.exclusions]]
+file = "src/sql.rs"
+line = 141
+source = "_ => Err(Error::Storage),"
+reason = "The fixed RESERVATION query filters kind = 'reserved' before projecting that same column; decode_claim maps exactly that string to Claim::Reserved or returns a real malformed-field error, so no other successful variant can arrive here."
+evidence = "docs/COVERAGE.md#proposed-invariant-exceptions"
+targets = ["native"]
+
+[coverage.exclusions.evidence_sources]
+"src/sql.rs" = "d0fa39304bd4d11210a95e5b5e22644ad5f27db027745498f915cb3fc05ed2ea"
